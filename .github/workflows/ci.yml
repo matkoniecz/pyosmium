@@ -5,6 +5,7 @@ on: [ push, pull_request ]
 jobs:
     build-default:
         runs-on: ubuntu-20.04
+        if: False
 
         strategy:
             matrix:
@@ -35,6 +36,7 @@ jobs:
 
     build-ubuntu-1804:
         runs-on: ubuntu-18.04
+        if: False
 
         strategy:
             matrix:
@@ -79,6 +81,7 @@ jobs:
 
     build-ubuntu-2004:
         runs-on: ubuntu-20.04
+        if: False
 
         strategy:
             matrix:
@@ -119,6 +122,7 @@ jobs:
 
     build-macos:
         runs-on: macos-latest
+        if: False
 
         steps:
             - uses: actions/checkout@v2
@@ -142,4 +146,103 @@ jobs:
               shell: bash
               working-directory: test
 
+    build-windows:
+        runs-on: windows-2019
 
+        defaults:
+          run:
+            shell: bash -l {0}
+
+        strategy:
+            matrix:
+                python: [3.6, 3.7, 3.8, 3.9]
+
+        steps:
+            - uses: actions/checkout@v2
+
+            - name: Cache conda
+              uses: actions/cache@v2
+              with:
+                path: ~/conda_pkgs_dir
+                key: ${{ runner.os }}-${{ matrix.python }}-conda-0
+
+            - uses: conda-incubator/setup-miniconda@v2
+              with:
+                activate-environment: pyosmium
+                python-version: ${{ matrix.python }}
+                use-only-tar-bz2: true
+
+            - name: Install prerequisites
+              run: conda install boost-cpp bzip2 expat zlib shapely nose wheel
+
+
+            - name: Copy libraries
+              run: |
+                cp $CONDA/envs/pyosmium/Library/bin/zlib.dll $CONDA/envs/pyosmium/Library/bin/expat.dll $CONDA/envs/pyosmium/Library/bin/libbz2.dll $CONDA/envs/pyosmium/Library/bin/liblz4.dll src/osmium
+
+            - name: Clone dependant projects
+              run: |
+                mkdir contrib
+                cd contrib
+                git clone --depth 1 https://github.com/osmcode/libosmium.git
+                git clone --depth 1 https://github.com/mapbox/protozero.git
+                git clone --depth 1 https://github.com/pybind/pybind11.git
+
+            - name: Build pyosmium
+              run: |
+                python setup.py build
+                python setup.py install --user
+                python setup.py bdist_wheel
+
+            - name: Test wheel
+              run: python run_tests.py
+              working-directory: test
+
+            - uses: actions/upload-artifact@v2
+              with:
+                name: pyosmium-wheel-win64-${{ matrix.python }}
+                path: ./dist/*.whl
+
+    test-windows:
+        runs-on: windows-2019
+        needs: build-windows
+
+        defaults:
+          run:
+            shell: bash
+
+        strategy:
+            matrix:
+                python: [3.6, 3.7, 3.8, 3.9]
+
+        steps:
+            - uses: actions/checkout@v2
+
+            - uses: actions/download-artifact@v2
+              with:
+                name: pyosmium-wheel-win64-${{ matrix.python }}
+
+            - uses: actions/cache@v2
+              with:
+                  path: |
+                     test.osm.pbf
+                  key: nominatim-test-data-0
+
+            - uses: actions/setup-python@v2
+              with:
+                  python-version: ${{ matrix.python }}
+
+            - name: Install wheel
+              run: pip install --user *.whl
+
+            - name: Download test file
+              run: |
+                  if [ ! -f test.osm.pbf ]; then
+                      pip install wget
+                      python -c "import wget; wget.download('https://download.geofabrik.de/europe/monaco-latest.osm.pbf', 'test.osm.pbf')"
+                  fi
+            - name: Run examples
+              run: |
+                python examples/osm_file_stats.py test.osm.pbf
+                python examples/road_length.py test.osm.pbf
+                python examples/pub_names.py test.osm.pbf
