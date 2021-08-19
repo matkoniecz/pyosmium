@@ -243,6 +243,7 @@ jobs:
                   fi
             - name: Run examples
               run: |
-                python examples/osm_file_stats.py test.osm.pbf
-                python examples/road_length.py test.osm.pbf
-                python examples/pub_names.py test.osm.pbf
+                python osm_file_stats.py ../test.osm.pbf
+                python road_length.py ../test.osm.pbf
+                python pub_names.py ../test.osm.pbf
+              working-directory: examples
